@@ -45,7 +45,7 @@ export function createMintBouncerService(opts: MintBouncerOptions = {}) {
   async function screenOne(
     cfg: ChainConfig,
     wallet: string,
-  ): Promise<Verdict & { wallet: string; chain: string; explorerUrl: string; funder: string | null }> {
+  ): Promise<Verdict & { wallet: string; chain: string; explorerUrl: string; funder: string | null; funderVerdict: Verdict['verdict'] | null }> {
     const [txs, nftTransfers, tokenTransfers] = await Promise.all([
       getTxList(cfg, wallet, fetchFn),
       getNftTransfers(cfg, wallet, fetchFn),
@@ -65,6 +65,32 @@ export function createMintBouncerService(opts: MintBouncerOptions = {}) {
         .filter((n) => Number.isFinite(n) && n > 0);
       funderFirstSeenS = stamps.length ? Math.min(...stamps) : null;
     }
+    // One-hop recursive screen: run the funder's own history through the
+    // same scoring (no deeper recursion). A flipper funding a fresh wallet
+    // is the rotation pattern — the suspicion transfers.
+    let funderScreen: { verdict: Verdict['verdict'] } | null = null;
+    if (fundingHops[0]) {
+      const funder = fundingHops[0].from;
+      const [fNfts, fToks, fTxs] = await Promise.all([
+        getNftTransfers(cfg, funder, fetchFn, 2),
+        getTokenTransfers(cfg, funder, fetchFn, 2),
+        getTxList(cfg, funder, fetchFn, 2),
+      ]);
+      const fVerdict = screenWallet(
+        {
+          wallet: funder,
+          nowS: nowS(),
+          txs: fTxs,
+          nftTransfers: fNfts,
+          tokenTransfers: fToks,
+          fundingHops: [],
+          funderFirstSeenS: null,
+          funderScreen: null,
+        },
+        (h) => txUrl(cfg, h),
+      );
+      funderScreen = { verdict: fVerdict.verdict };
+    }
     const verdict = screenWallet(
       {
         wallet,
@@ -74,6 +100,7 @@ export function createMintBouncerService(opts: MintBouncerOptions = {}) {
         tokenTransfers,
         fundingHops,
         funderFirstSeenS,
+        funderScreen,
       },
       (h) => txUrl(cfg, h),
     );
@@ -84,6 +111,8 @@ export function createMintBouncerService(opts: MintBouncerOptions = {}) {
       explorerUrl: addressUrl(cfg, wallet),
       /** Hop-1 funder, for sybil clustering. */
       funder: fundingHops[0]?.from ?? null,
+      /** The funder's own screen verdict (one hop, no deeper recursion). */
+      funderVerdict: funderScreen?.verdict ?? null,
     };
   }
 

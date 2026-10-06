@@ -147,6 +147,12 @@ export interface ScreenInput {
   fundingHops: FundingHop[];
   /** First-seen timestamp of the hop-1 funder (for freshness checks). null = unknown. */
   funderFirstSeenS: number | null;
+  /**
+   * One-hop recursive screen of the hop-1 funder (its own flip/dump
+   * verdict). null = no funder or funder not screened. Never recurses
+   * deeper — the funder's own funder is out of scope.
+   */
+  funderScreen?: { verdict: Verdict['verdict'] } | null;
 }
 
 function ev(txUrl: (h: string) => string, hashes: string[]): string[] {
@@ -252,6 +258,29 @@ export function screenWallet(
     evidence: hop1 ? [txUrl(hop1.txHash)] : [],
   });
 
+  // ---- funder behavior (one-hop recursive screen) ----
+  // A flipper's oldest trick is rotation: dirty money funds a clean wallet
+  // for the whitelist. If the wallet funding you is itself flagged, that
+  // suspicion transfers — hard for new wallets, advisory for old ones.
+  const fs = input.funderScreen ?? null;
+  let funderBehaviorScore: number | null = null;
+  let funderDetail = 'No funder behavior screen available.';
+  if (fs) {
+    funderBehaviorScore = fs.verdict === 'deny' ? 85 : fs.verdict === 'review' ? 40 : 5;
+    funderDetail =
+      fs.verdict === 'deny'
+        ? `Funded by a wallet flagged as a flipper/dumper (${hop1!.from}).`
+        : fs.verdict === 'review'
+          ? `Funder's own record is mixed — flagged for manual review.`
+          : `Funder's own record is clean.`;
+  }
+  signals.push({
+    name: 'funder_behavior',
+    score: funderBehaviorScore,
+    detail: funderDetail,
+    evidence: [],
+  });
+
   // ---- verdict ----
   const scored = signals.filter((s) => s.score !== null) as (Signal & { score: number })[];
   const riskScore = scored.length
@@ -266,7 +295,15 @@ export function screenWallet(
     (byName.funding_freshness !== null &&
       byName.funding_freshness >= 80 &&
       byName.wallet_age !== null &&
-      byName.wallet_age >= 40)
+      byName.wallet_age >= 40) ||
+    // Rotation pattern: a new wallet funded by a flagged flipper/dumper.
+    // An old wallet with its own clean history is not punished for where
+    // its ancient funding came from — the signal stays visible, the verdict
+    // doesn't flip.
+    (byName.funder_behavior !== null &&
+      byName.funder_behavior >= 85 &&
+      ageDays !== null &&
+      ageDays < NEW_WALLET_DAYS)
   ) {
     verdict = 'deny';
   } else if (
@@ -284,6 +321,13 @@ export function screenWallet(
       reasons.push('Serial dumper: most received token lots sold off in full.');
     if (byName.funding_freshness !== null && byName.funding_freshness >= 80)
       reasons.push('Sybil pattern: funded by a fresh wallet, wallet itself is new.');
+    if (
+      byName.funder_behavior !== null &&
+      byName.funder_behavior >= 85 &&
+      ageDays !== null &&
+      ageDays < NEW_WALLET_DAYS
+    )
+      reasons.push('Rotation pattern: new wallet funded by a flagged flipper/dumper wallet.');
     if (!reasons.length) reasons.push('High aggregate risk score.');
   } else if (verdict === 'review') {
     if (ageDays !== null && ageDays < NEW_WALLET_DAYS)

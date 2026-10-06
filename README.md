@@ -39,8 +39,9 @@ No keys, no secrets, no environment setup. There is nothing to sign, so there is
 | Flip rate | ≥70% of NFTs flipped within 24h (min 3 acquisitions) |
 | Dump rate | ≥80% of received token lots fully sold off (min 5 lots) |
 | Sybil pattern | Funded by a wallet <7 days old, wallet itself <30 days old |
+| Rotation pattern | New wallet (<30d) funded by a wallet flagged as flipper/dumper — the funder's own history is screened one hop deep |
 
-Young wallets (<30 days) or thin history go to **review**, never auto-deny on age alone. Every threshold lives in `src/scoring.ts` — deterministic, auditable, forkable.
+Young wallets (<30 days) or thin history go to **review**, never auto-deny on age alone. An old wallet with clean history is not punished for ancient funding — the funder signal stays visible, the verdict doesn't flip. Every threshold lives in `src/scoring.ts` — deterministic, auditable, forkable.
 
 ## Chains
 

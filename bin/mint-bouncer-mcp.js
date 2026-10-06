@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { createRequire } from 'node:module';
-const require = createRequire(import.meta.url);
-const pkg = require('../package.json');
-process.argv[2] === '--version'
-  ? console.log(pkg.version)
-  : (await import('../dist/server.js'));
+// Bin entrypoint: always starts the stdio server.
+const { main } = await import('../dist/server.js');
+await main().catch((e) => {
+  console.error(`[mint-bouncer] fatal: ${e.message}`);
+  process.exit(1);
+});

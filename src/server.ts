@@ -46,7 +46,7 @@ const chainSchema = z
 export function createMintBouncerServer(): McpServer {
   const svc = createMintBouncerService();
   const server = new McpServer(
-    { name: 'mint-bouncer', version: '0.1.0' },
+    { name: 'mint-bouncer', version: '0.2.0' },
     { capabilities: { tools: {} } },
   );
 
@@ -139,6 +139,8 @@ async function main(): Promise<void> {
   console.error('[mint-bouncer] serving over stdio');
   await server.connect(transport);
 }
+
+export { main };
 
 const invokedDirectly =
   process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

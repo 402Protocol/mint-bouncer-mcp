@@ -190,6 +190,43 @@ await check('clean holder → allow', () => {
   assert.equal(v.signals.find((s) => s.name === 'flip_rate')!.score, 0);
 });
 
+await check('new wallet funded by flipper → deny (rotation pattern)', () => {
+  const v = screenWallet(
+    baseInput({
+      txs: [tx(F, W, NOW - 5 * DAY)],
+      fundingHops: [
+        { from: F, to: W, valueWei: '1000', txHash: '0x01', timeStamp: NOW - 5 * DAY },
+      ] as FundingHop[],
+      funderFirstSeenS: NOW - 90 * DAY, // old funder: no sybil-on-age flag
+      funderScreen: { verdict: 'deny' },
+    }),
+    txUrl,
+  );
+  assert.equal(v.verdict, 'deny');
+  assert.equal(v.signals.find((s) => s.name === 'funder_behavior')!.score, 85);
+  assert.match(v.reasons.join(' '), /Rotation pattern/);
+});
+
+await check('old wallet funded long ago by flipper → allow, signal visible', () => {
+  const v = screenWallet(
+    baseInput({
+      funderScreen: { verdict: 'deny' },
+    }),
+    txUrl,
+  );
+  assert.equal(v.verdict, 'allow');
+  assert.equal(v.signals.find((s) => s.name === 'funder_behavior')!.score, 85);
+  assert.match(
+    v.signals.find((s) => s.name === 'funder_behavior')!.detail,
+    /flagged as a flipper\/dumper/,
+  );
+});
+
+await check('clean funder → low funder_behavior score', () => {
+  const v = screenWallet(baseInput({ funderScreen: { verdict: 'allow' } }), txUrl);
+  assert.equal(v.signals.find((s) => s.name === 'funder_behavior')!.score, 5);
+});
+
 await check('no history → review', () => {
   const v = screenWallet(
     baseInput({ txs: [], nftTransfers: [], tokenTransfers: [], fundingHops: [], funderFirstSeenS: null }),
